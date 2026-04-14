@@ -65,7 +65,28 @@ npm run dev
 npm run build
 ```
 
-產出靜態檔案於 `dist/`，可部署至 Vercel、Netlify、Firebase Hosting、GitHub Pages 等。
+產出靜態檔案於 `dist/`。
+
+## 部署到 GitHub Pages
+
+本 repo 已內建 `.github/workflows/deploy.yml`，push 到 `main` 會自動建置並部署。
+
+**設定步驟**：
+
+1. 到 GitHub repo **Settings → Pages**，把 **Source** 設為 **GitHub Actions**。
+2. 到 **Settings → Secrets and variables → Actions → New repository secret**，依序新增：
+   - `VITE_FIREBASE_API_KEY`
+   - `VITE_FIREBASE_AUTH_DOMAIN`
+   - `VITE_FIREBASE_DATABASE_URL`
+   - `VITE_FIREBASE_PROJECT_ID`
+   - `VITE_FIREBASE_STORAGE_BUCKET`
+   - `VITE_FIREBASE_MESSAGING_SENDER_ID`
+   - `VITE_FIREBASE_APP_ID`
+   - `VITE_FINNHUB_API_KEY`
+3. 合併 / push 到 `main`，等 Action 跑完後網址為：
+   `https://<username>.github.io/Accounting/`
+
+> ⚠️ `VITE_*` 變數會被打包進 JS bundle，任何人打開網頁原始碼都能看到。Firebase Web API Key 本身設計為公開值，但請務必在 Firebase Console → Realtime Database → Rules 限制讀寫權限；Finnhub key 若外流可能被他人用光配額。
 
 ## 資料結構 (Firebase Realtime Database)
 
