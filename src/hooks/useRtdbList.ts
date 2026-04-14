@@ -19,6 +19,15 @@ export interface RtdbListApi<T> {
   setAll: (records: Record<string, Omit<T, 'id'>>) => Promise<void>;
 }
 
+/** Firebase RTDB 不接受 undefined，寫入前先把 undefined 的 key 拔掉 */
+function stripUndefined<T extends object>(obj: T): T {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== undefined) out[k] = v;
+  }
+  return out as T;
+}
+
 export function useRtdbList<T extends { id: string }>(path: string | null): RtdbListApi<T> {
   const [items, setItems] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,12 +71,12 @@ export function useRtdbList<T extends { id: string }>(path: string | null): Rtdb
       add: async (value) => {
         throwIfNoDb();
         const r = push(ref(db!, path!));
-        await set(r, value);
+        await set(r, stripUndefined(value as object));
         return r.key;
       },
       updateItem: async (id, patch) => {
         throwIfNoDb();
-        await update(ref(db!, `${path}/${id}`), patch);
+        await update(ref(db!, `${path}/${id}`), stripUndefined(patch as object));
       },
       remove: async (id) => {
         throwIfNoDb();
