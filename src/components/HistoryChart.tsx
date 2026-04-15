@@ -4,6 +4,7 @@ import {
   Legend,
   Line,
   LineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -32,12 +33,17 @@ const GOAL_COLORS = [
   '#4f46e5',
 ];
 
-/** 產生從 [anchor - (count-1) 個月] 到 anchor 的月份 key 陣列（升冪） */
-function monthRangeAsc(anchorKey: string, count: number): string[] {
+/**
+ * 以 anchorKey（當月）為中心，前半段 past、後半段 future，共 count 個月（升冪）。
+ * past = floor(count/2) 個月, future = count - floor(count/2) - 1 個月 (含當月共 count)
+ */
+function centeredMonthRange(anchorKey: string, count: number): string[] {
   const [y, m] = anchorKey.split('-').map(Number);
+  const half = Math.floor(count / 2);
   const keys: string[] = [];
-  for (let i = count - 1; i >= 0; i--) {
-    const d = new Date(y, m - 1 - i, 1);
+  // i = -half … count-half-1，i=0 即 anchorKey
+  for (let i = -half; i < count - half; i++) {
+    const d = new Date(y, m - 1 + i, 1);
     const yy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     keys.push(`${yy}-${mm}`);
@@ -50,9 +56,10 @@ export default function HistoryChart() {
   const { months, loading } = useAllMonths();
   const { items: goals } = useRtdbList<Goal>('goals');
   const { items: recurringRules } = useRecurring();
+  const nowKey = currentMonthKey();
 
   const data = useMemo(() => {
-    const keys = monthRangeAsc(currentMonthKey(), RANGE_MONTHS[range]);
+    const keys = centeredMonthRange(nowKey, RANGE_MONTHS[range]);
     let rollingEnd = 0;
     // 若序列起點前有 startBalance 資料，用它當基準
     const firstWithStart = keys.find(
@@ -60,13 +67,10 @@ export default function HistoryChart() {
     );
     if (firstWithStart) {
       rollingEnd = Number(months[firstWithStart]?.startBalance ?? 0);
-      // 將 rollingEnd 推進到第一個 keys 之前 (keys[0] 本身的月初)
-      // 若 firstWithStart === keys[0] 則不用額外推進
-      // 若 firstWithStart 在 keys[0] 之後 (晚於)，則 keys[0] 的起點未知，預設 0
       if (firstWithStart !== keys[0]) rollingEnd = 0;
     }
 
-    // 累計每個目標截至各月底的存入金額
+    // 累計每個目標截至各月底的存入金額（僅已過月份）
     const goalAcc: Record<string, number> = {};
 
     return keys.map((k) => {
@@ -79,12 +83,12 @@ export default function HistoryChart() {
       const expense =
         (m?.expenses ? Object.values(m.expenses).reduce((s, e) => s + Number(e.amount || 0), 0) : 0) +
         recExpense.reduce((s, e) => s + e.amount, 0);
-      // 該月初餘額：若 RTDB 有存就優先用，否則沿用前月結餘
+      // 月初：若 RTDB 有存就優先用，否則沿用前月結餘（未來月份自然延伸）
       const start = typeof m?.startBalance === 'number' ? m.startBalance : rollingEnd;
       const end = start + income - expense;
       rollingEnd = end;
 
-      // 加總該月被 tag 的支出
+      // 加總該月被 tag 的支出（目標累計）
       if (m?.expenses) {
         for (const e of Object.values(m.expenses)) {
           if (e.goalId) goalAcc[e.goalId] = (goalAcc[e.goalId] ?? 0) + Number(e.amount || 0);
@@ -102,15 +106,15 @@ export default function HistoryChart() {
       }
       return row;
     });
-  }, [months, goals, recurringRules, range]);
+  }, [months, goals, recurringRules, range, nowKey]);
 
   const tickInterval = range === '1y' ? 0 : range === '5y' ? 2 : 5;
-  const hasAnyData = data.some((d) => (d.income as number) > 0 || (d.expense as number) > 0);
+  const hasAnyData = data.some((d) => (d.income as number) > 0 || (d.expense as number) > 0 || (d.endBalance as number) !== 0);
 
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <header className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold">歷史趨勢</h2>
+        <h2 className="text-lg font-semibold">歷史 &amp; 未來趨勢</h2>
         <div className="inline-flex overflow-hidden rounded-md border border-slate-300 text-sm">
           {(['1y', '5y', '10y'] as Range[]).map((r) => (
             <button
@@ -141,6 +145,12 @@ export default function HistoryChart() {
               <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => formatCurrency(Number(v))} width={90} />
               <Tooltip formatter={(v) => formatCurrency(Number(v))} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
+              <ReferenceLine
+                x={nowKey}
+                stroke="#64748b"
+                strokeDasharray="4 3"
+                label={{ value: '現在', position: 'insideTopRight', fontSize: 11, fill: '#64748b' }}
+              />
               <Line type="monotone" dataKey="income" name="收入" stroke="#10b981" dot={false} strokeWidth={2} />
               <Line type="monotone" dataKey="expense" name="支出" stroke="#ef4444" dot={false} strokeWidth={2} />
               <Line type="monotone" dataKey="endBalance" name="月末餘額" stroke="#0ea5e9" dot={false} strokeWidth={2} />
