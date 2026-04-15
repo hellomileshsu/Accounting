@@ -8,22 +8,30 @@ interface Props {
   kind: TransactionKind;
   api: RtdbListApi<Transaction>;
   goals?: Goal[];
+  /** 由重複規則合成的虛擬交易（唯讀，無 edit/delete） */
+  recurringItems?: Transaction[];
 }
 
-export default function TransactionList({ kind, api, goals }: Props) {
+export default function TransactionList({ kind, api, goals, recurringItems = [] }: Props) {
   const goalById = useMemo(() => {
     const m = new Map<string, Goal>();
     (goals ?? []).forEach((g) => m.set(g.id, g));
     return m;
   }, [goals]);
+
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [creating, setCreating] = useState(false);
 
   const title = kind === 'income' ? '收入' : '支出';
   const accent = kind === 'income' ? 'text-emerald-600' : 'text-rose-600';
 
-  const items = [...api.items].sort((a, b) => (a.date < b.date ? 1 : -1));
-  const total = items.reduce((s, i) => s + Number(i.amount || 0), 0);
+  const allItems = useMemo(
+    () =>
+      [...api.items, ...recurringItems].sort((a, b) => (a.date < b.date ? 1 : -1)),
+    [api.items, recurringItems],
+  );
+  const total = allItems.reduce((s, i) => s + Number(i.amount || 0), 0);
+  const isEmpty = allItems.length === 0;
 
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -41,15 +49,20 @@ export default function TransactionList({ kind, api, goals }: Props) {
       </header>
       {api.loading ? (
         <p className="text-sm text-slate-500">載入中…</p>
-      ) : items.length === 0 ? (
+      ) : isEmpty ? (
         <p className="text-sm text-slate-500">尚無資料</p>
       ) : (
         <ul className="divide-y divide-slate-100">
-          {items.map((t) => (
+          {allItems.map((t) => (
             <li key={t.id} className="flex items-center justify-between py-2">
               <div className="min-w-0">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <span className="truncate font-medium">{t.name}</span>
+                  {t.isRecurring && (
+                    <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-600">
+                      🔄 重複
+                    </span>
+                  )}
                   {t.goalId && goalById.get(t.goalId) && (
                     <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">
                       🎯 {goalById.get(t.goalId)!.name}
@@ -63,20 +76,24 @@ export default function TransactionList({ kind, api, goals }: Props) {
               </div>
               <div className="flex items-center gap-3">
                 <span className={`font-semibold ${accent}`}>{formatCurrency(t.amount)}</span>
-                <button
-                  onClick={() => setEditing(t)}
-                  className="text-xs text-slate-500 hover:text-sky-700"
-                >
-                  編輯
-                </button>
-                <button
-                  onClick={() => {
-                    if (confirm(`確定刪除「${t.name}」？`)) api.remove(t.id);
-                  }}
-                  className="text-xs text-slate-500 hover:text-rose-600"
-                >
-                  刪除
-                </button>
+                {t.isRecurring ? null : (
+                  <>
+                    <button
+                      onClick={() => setEditing(t)}
+                      className="text-xs text-slate-500 hover:text-sky-700"
+                    >
+                      編輯
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirm(`確定刪除「${t.name}」？`)) api.remove(t.id);
+                      }}
+                      className="text-xs text-slate-500 hover:text-rose-600"
+                    >
+                      刪除
+                    </button>
+                  </>
+                )}
               </div>
             </li>
           ))}
@@ -86,9 +103,7 @@ export default function TransactionList({ kind, api, goals }: Props) {
         <TransactionForm
           kind={kind}
           goals={goals}
-          onSubmit={async (data) => {
-            await api.add(data);
-          }}
+          onSubmit={async (data) => { await api.add(data); }}
           onClose={() => setCreating(false)}
         />
       )}
@@ -97,9 +112,7 @@ export default function TransactionList({ kind, api, goals }: Props) {
           kind={kind}
           goals={goals}
           initial={editing}
-          onSubmit={async (data) => {
-            await api.updateItem(editing.id, data);
-          }}
+          onSubmit={async (data) => { await api.updateItem(editing.id, data); }}
           onClose={() => setEditing(null)}
         />
       )}

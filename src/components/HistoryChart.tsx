@@ -11,9 +11,11 @@ import {
 } from 'recharts';
 import { useAllMonths } from '../hooks/useAllMonths';
 import { useRtdbList } from '../hooks/useRtdbList';
+import { useRecurring } from '../hooks/useRecurring';
 import type { Goal } from '../types';
 import { formatCurrency } from '../utils/format';
 import { currentMonthKey } from '../utils/month';
+import { getRecurringForMonth } from '../utils/recurring';
 
 type Range = '1y' | '5y' | '10y';
 
@@ -47,6 +49,7 @@ export default function HistoryChart() {
   const [range, setRange] = useState<Range>('1y');
   const { months, loading } = useAllMonths();
   const { items: goals } = useRtdbList<Goal>('goals');
+  const { items: recurringRules } = useRecurring();
 
   const data = useMemo(() => {
     const keys = monthRangeAsc(currentMonthKey(), RANGE_MONTHS[range]);
@@ -68,12 +71,14 @@ export default function HistoryChart() {
 
     return keys.map((k) => {
       const m = months[k];
-      const income = m?.income
-        ? Object.values(m.income).reduce((s, i) => s + Number(i.amount || 0), 0)
-        : 0;
-      const expense = m?.expenses
-        ? Object.values(m.expenses).reduce((s, e) => s + Number(e.amount || 0), 0)
-        : 0;
+      const recIncome = getRecurringForMonth(recurringRules.filter((r) => r.kind === 'income'), k);
+      const recExpense = getRecurringForMonth(recurringRules.filter((r) => r.kind === 'expenses'), k);
+      const income =
+        (m?.income ? Object.values(m.income).reduce((s, i) => s + Number(i.amount || 0), 0) : 0) +
+        recIncome.reduce((s, i) => s + i.amount, 0);
+      const expense =
+        (m?.expenses ? Object.values(m.expenses).reduce((s, e) => s + Number(e.amount || 0), 0) : 0) +
+        recExpense.reduce((s, e) => s + e.amount, 0);
       // 該月初餘額：若 RTDB 有存就優先用，否則沿用前月結餘
       const start = typeof m?.startBalance === 'number' ? m.startBalance : rollingEnd;
       const end = start + income - expense;
@@ -97,7 +102,7 @@ export default function HistoryChart() {
       }
       return row;
     });
-  }, [months, goals, range]);
+  }, [months, goals, recurringRules, range]);
 
   const tickInterval = range === '1y' ? 0 : range === '5y' ? 2 : 5;
   const hasAnyData = data.some((d) => (d.income as number) > 0 || (d.expense as number) > 0);
