@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { Goal, Transaction, TransactionKind } from '../types';
 import { todayIso } from '../utils/month';
+import { formatCurrency, formatPercent } from '../utils/format';
+import { achievementRate } from '../utils/recurring';
 
 interface Props {
   kind: TransactionKind;
@@ -30,6 +32,13 @@ export default function TransactionForm({ kind, initial, onSubmit, onClose, goal
   }, [initial]);
 
   const title = kind === 'income' ? '收入' : '支出';
+  const isRecurringEntry = Boolean(initial?.recurringId);
+  const originalAmt = initial?.originalAmount;
+  const currentAmtNum = Number(amount);
+  const rate =
+    isRecurringEntry && typeof originalAmt === 'number' && Number.isFinite(currentAmtNum)
+      ? achievementRate(currentAmtNum, originalAmt)
+      : null;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,6 +52,9 @@ export default function TransactionForm({ kind, initial, onSubmit, onClose, goal
         date,
         note: note.trim() || undefined,
         goalId: kind === 'expenses' && goalId ? goalId : undefined,
+        // 保留重複規則血統：materialized 與未來 virtual 預覽送出時都帶
+        recurringId: initial?.recurringId,
+        originalAmount: initial?.originalAmount,
       });
       onClose();
     } finally {
@@ -65,6 +77,20 @@ export default function TransactionForm({ kind, initial, onSubmit, onClose, goal
             ✕
           </button>
         </div>
+        {isRecurringEntry && typeof originalAmt === 'number' && (
+          <div className="mb-3 rounded-md border border-sky-200 bg-sky-50 p-2.5 text-xs text-sky-800">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+              <span className="font-medium">🔄 重複規則項目</span>
+              <span>原始金額：{formatCurrency(originalAmt)}</span>
+              {rate !== null && (
+                <span>達成率：{formatPercent(rate)}</span>
+              )}
+            </div>
+            <div className="mt-0.5 text-sky-700/80">
+              編輯下方「金額」即為實際發生值；原始金額由規則凍結不會變動。
+            </div>
+          </div>
+        )}
         <div className="space-y-3">
           <Field label="名稱">
             <input

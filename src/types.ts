@@ -6,9 +6,12 @@ export interface Transaction {
   note?: string;
   /** 僅 expenses 使用：此筆支出關聯到哪個 Goal (用於存錢目標進度計算) */
   goalId?: string;
-  /** 由重複規則合成的虛擬交易，不存在 RTDB */
+  /** 由重複規則合成的**虛擬預覽**，不存在 RTDB（僅用於未來月份） */
   isRecurring?: boolean;
+  /** 指向產生此筆的重複規則 id（materialized 與 virtual 皆有） */
   recurringId?: string;
+  /** 規則實體化當下的原始金額；與 amount 比對可得達成率 */
+  originalAmount?: number;
 }
 
 export interface Goal {
@@ -55,4 +58,6 @@ export interface RecurringRule {
   note?: string;
   goalId?: string;
   createdAt: number;
+  /** 使用者主動刪除的 occurrence 日期，避免之後被自動再實體化 */
+  excludedOccurrences?: string[];
 }

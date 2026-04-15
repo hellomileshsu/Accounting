@@ -13,10 +13,10 @@ import {
 import { useAllMonths } from '../hooks/useAllMonths';
 import { useRtdbList } from '../hooks/useRtdbList';
 import { useRecurring } from '../hooks/useRecurring';
-import type { Goal } from '../types';
+import type { Goal, Transaction } from '../types';
 import { formatCurrency } from '../utils/format';
 import { currentMonthKey } from '../utils/month';
-import { getRecurringForMonth } from '../utils/recurring';
+import { getUnmaterializedForMonth } from '../utils/recurring';
 
 type Range = '1y' | '5y' | '10y';
 
@@ -73,15 +73,25 @@ export default function HistoryChart() {
     // 累計每個目標截至各月底的存入金額（僅已過月份）
     const goalAcc: Record<string, number> = {};
 
+    const incomeRules = recurringRules.filter((r) => r.kind === 'income');
+    const expenseRules = recurringRules.filter((r) => r.kind === 'expenses');
+
     return keys.map((k) => {
       const m = months[k];
-      const recIncome = getRecurringForMonth(recurringRules.filter((r) => r.kind === 'income'), k);
-      const recExpense = getRecurringForMonth(recurringRules.filter((r) => r.kind === 'expenses'), k);
+      const realIncome: Transaction[] = m?.income
+        ? Object.entries(m.income).map(([id, v]) => ({ id, ...v }))
+        : [];
+      const realExpense: Transaction[] = m?.expenses
+        ? Object.entries(m.expenses).map(([id, v]) => ({ id, ...v }))
+        : [];
+      // 只補未實體化部分（當月/過去月通常全已實體化；未來月則全為虛擬）
+      const recIncome = getUnmaterializedForMonth(incomeRules, k, realIncome);
+      const recExpense = getUnmaterializedForMonth(expenseRules, k, realExpense);
       const income =
-        (m?.income ? Object.values(m.income).reduce((s, i) => s + Number(i.amount || 0), 0) : 0) +
+        realIncome.reduce((s, i) => s + Number(i.amount || 0), 0) +
         recIncome.reduce((s, i) => s + i.amount, 0);
       const expense =
-        (m?.expenses ? Object.values(m.expenses).reduce((s, e) => s + Number(e.amount || 0), 0) : 0) +
+        realExpense.reduce((s, e) => s + Number(e.amount || 0), 0) +
         recExpense.reduce((s, e) => s + e.amount, 0);
       // 月初：若 RTDB 有存就優先用，否則沿用前月結餘（未來月份自然延伸）
       const start = typeof m?.startBalance === 'number' ? m.startBalance : rollingEnd;

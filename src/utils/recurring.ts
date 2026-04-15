@@ -1,3 +1,6 @@
+import { ref, remove } from 'firebase/database';
+import { db } from '../firebase';
+import type { AllMonths } from '../hooks/useAllMonths';
 import type { RecurringRule, Transaction } from '../types';
 
 /** YYYY-MM-DD 轉 Date (local midnight) */
@@ -45,6 +48,7 @@ export function getRecurringForMonth(
         id: `recurring_${rule.id}_${dateStr}`,
         name: rule.name,
         amount: rule.amount,
+        originalAmount: rule.amount,
         date: dateStr,
         note: rule.note,
         goalId: rule.goalId,
@@ -130,3 +134,65 @@ export const INTERVAL_LABELS: Record<string, string> = {
   monthly: '每月',
   yearly: '每年',
 };
+
+/** 列出單一規則在指定月份的 occurrence 日期（YYYY-MM-DD 升冪） */
+export function getOccurrenceDatesForMonth(
+  rule: RecurringRule,
+  monthKey: string,
+): string[] {
+  return getRecurringForMonth([rule], monthKey).map((t) => t.date);
+}
+
+/**
+ * 回傳「應該出現但尚未實體化」的虛擬 Transaction。
+ * - 已存在 existingTxs (有相同 recurringId + date) 者排除
+ * - rule.excludedOccurrences 內的日期排除
+ * 用於未來月份預覽與 HistoryChart 補算。
+ */
+export function getUnmaterializedForMonth(
+  rules: RecurringRule[],
+  monthKey: string,
+  existingTxs: Transaction[],
+): Transaction[] {
+  const existingByRule = new Map<string, Set<string>>();
+  for (const t of existingTxs) {
+    if (!t.recurringId) continue;
+    if (!existingByRule.has(t.recurringId)) existingByRule.set(t.recurringId, new Set());
+    existingByRule.get(t.recurringId)!.add(t.date);
+  }
+  const all = getRecurringForMonth(rules, monthKey);
+  return all.filter((t) => {
+    const ruleId = t.recurringId!;
+    const rule = rules.find((r) => r.id === ruleId);
+    if (rule?.excludedOccurrences?.includes(t.date)) return false;
+    if (existingByRule.get(ruleId)?.has(t.date)) return false;
+    return true;
+  });
+}
+
+/** 掃過所有月份，移除 recurringId === ruleId 的 RTDB entry */
+export async function cascadeDeleteRecurring(
+  ruleId: string,
+  allMonths: AllMonths,
+): Promise<void> {
+  if (!db) return;
+  const promises: Promise<void>[] = [];
+  for (const [monthKey, monthData] of Object.entries(allMonths)) {
+    for (const kind of ['income', 'expenses'] as const) {
+      const entries = monthData[kind];
+      if (!entries) continue;
+      for (const [entryId, entry] of Object.entries(entries)) {
+        if (entry.recurringId === ruleId) {
+          promises.push(remove(ref(db, `months/${monthKey}/${kind}/${entryId}`)));
+        }
+      }
+    }
+  }
+  await Promise.all(promises);
+}
+
+/** 計算達成率百分比：actual / original。若 original 為 0 或 NaN 回傳 null */
+export function achievementRate(actual: number, original: number): number | null {
+  if (!Number.isFinite(original) || original === 0) return null;
+  return actual / original;
+}

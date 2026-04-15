@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import type { Goal } from '../types';
+import type { Goal, RecurringRule } from '../types';
 import { useRecurring } from '../hooks/useRecurring';
-import { INTERVAL_LABELS, nextOccurrence } from '../utils/recurring';
+import { useAllMonths } from '../hooks/useAllMonths';
+import { INTERVAL_LABELS, cascadeDeleteRecurring, nextOccurrence } from '../utils/recurring';
 import { formatCurrency } from '../utils/format';
 import RecurringForm from './RecurringForm';
 
@@ -11,11 +12,27 @@ interface Props {
 
 export default function RecurringPanel({ goals }: Props) {
   const api = useRecurring();
+  const { months } = useAllMonths();
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [deletingRule, setDeletingRule] = useState<RecurringRule | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const items = [...api.items].sort((a, b) => a.createdAt - b.createdAt);
   const editingRule = items.find((r) => r.id === editingId) ?? null;
+
+  async function handleDelete(rule: RecurringRule, cascade: boolean) {
+    setDeleting(true);
+    try {
+      if (cascade) {
+        await cascadeDeleteRecurring(rule.id, months);
+      }
+      await api.remove(rule.id);
+      setDeletingRule(null);
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -77,9 +94,7 @@ export default function RecurringPanel({ goals }: Props) {
                     編輯
                   </button>
                   <button
-                    onClick={() => {
-                      if (confirm(`刪除「${rule.name}」重複規則？`)) api.remove(rule.id);
-                    }}
+                    onClick={() => setDeletingRule(rule)}
                     className="text-slate-500 hover:text-rose-600"
                   >
                     刪除
@@ -104,6 +119,47 @@ export default function RecurringPanel({ goals }: Props) {
           onSubmit={async (data) => { await api.updateItem(editingRule.id, data); }}
           onClose={() => setEditingId(null)}
         />
+      )}
+      {deletingRule && (
+        <div className="fixed inset-0 z-10 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+            <h3 className="text-lg font-semibold">刪除「{deletingRule.name}」</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              已產生的月份項目要如何處理？
+            </p>
+            <div className="mt-4 space-y-2">
+              <button
+                disabled={deleting}
+                onClick={() => handleDelete(deletingRule, false)}
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-left text-sm hover:bg-slate-50 disabled:opacity-60"
+              >
+                <div className="font-medium text-slate-800">保留為一般項目</div>
+                <div className="text-xs text-slate-500">
+                  僅移除規則；各月份已產生的項目保留但不再被管理。
+                </div>
+              </button>
+              <button
+                disabled={deleting}
+                onClick={() => handleDelete(deletingRule, true)}
+                className="w-full rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-left text-sm hover:bg-rose-100 disabled:opacity-60"
+              >
+                <div className="font-medium text-rose-700">連同所有項目一併刪除</div>
+                <div className="text-xs text-rose-600/80">
+                  掃過所有月份，移除此規則產生的收支項目（無法復原）。
+                </div>
+              </button>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button
+                disabled={deleting}
+                onClick={() => setDeletingRule(null)}
+                className="rounded-md bg-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300 disabled:opacity-60"
+              >
+                {deleting ? '處理中…' : '取消'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </section>
   );

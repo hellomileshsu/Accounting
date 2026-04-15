@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRtdbList } from './hooks/useRtdbList';
 import { useStartBalance } from './hooks/useStartBalance';
 import { useRecurring } from './hooks/useRecurring';
 import { currentMonthKey } from './utils/month';
-import { getRecurringForMonth } from './utils/recurring';
+import {
+  getOccurrenceDatesForMonth,
+  getUnmaterializedForMonth,
+} from './utils/recurring';
 import { isFirebaseConfigured } from './firebase';
 import type { Goal, Transaction } from './types';
 import MonthSelector from './components/MonthSelector';
@@ -33,14 +36,83 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [monthKey]);
 
-  // 合成當月虛擬重複項目
+  // === 自動實體化：當月/過去月的重複規則 entry 自動寫入 RTDB ===
+  // pendingRef 避免同一 (monthKey, ruleId, date) 在 effect 連續觸發時被重複 add
+  const pendingRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (recurringApi.loading || incomeApi.loading || expenseApi.loading) return;
+    if (monthKey > currentMonthKey()) return; // 未來月份不自動實體化
+    for (const rule of recurringApi.items) {
+      const dates = getOccurrenceDatesForMonth(rule, monthKey);
+      const targetApi = rule.kind === 'income' ? incomeApi : expenseApi;
+      for (const date of dates) {
+        if (rule.excludedOccurrences?.includes(date)) continue;
+        const exists = targetApi.items.some(
+          (t) => t.recurringId === rule.id && t.date === date,
+        );
+        const key = `${monthKey}:${rule.id}:${date}`;
+        if (exists || pendingRef.current.has(key)) continue;
+        pendingRef.current.add(key);
+        targetApi
+          .add({
+            name: rule.name,
+            amount: rule.amount,
+            originalAmount: rule.amount,
+            recurringId: rule.id,
+            date,
+            note: rule.note,
+            goalId: rule.kind === 'expenses' ? rule.goalId : undefined,
+          })
+          .catch(() => { /* 忽略；下次 effect 重跑時會再嘗試 */ })
+          .finally(() => {
+            setTimeout(() => pendingRef.current.delete(key), 5000);
+          });
+      }
+    }
+    // 依賴 items 的資料變動（loading 變化也要重跑）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    monthKey,
+    recurringApi.items,
+    recurringApi.loading,
+    incomeApi.items,
+    incomeApi.loading,
+    expenseApi.items,
+    expenseApi.loading,
+  ]);
+
+  // 排除某個 occurrence：使用者刪除 recurring entry 時呼叫，避免下次 effect 再建。
+  const excludeOccurrence = useCallback(
+    async (ruleId: string, date: string) => {
+      const rule = recurringApi.items.find((r) => r.id === ruleId);
+      if (!rule) return;
+      const existing = rule.excludedOccurrences ?? [];
+      if (existing.includes(date)) return;
+      await recurringApi.updateItem(ruleId, {
+        excludedOccurrences: [...existing, date],
+      });
+    },
+    [recurringApi],
+  );
+
+  // 未來月份才需要虛擬預覽；當月/過去月已由上面的 effect 實體化
   const virtualIncome = useMemo(
-    () => getRecurringForMonth(recurringApi.items.filter((r) => r.kind === 'income'), monthKey),
-    [recurringApi.items, monthKey],
+    () =>
+      getUnmaterializedForMonth(
+        recurringApi.items.filter((r) => r.kind === 'income'),
+        monthKey,
+        incomeApi.items,
+      ),
+    [recurringApi.items, monthKey, incomeApi.items],
   );
   const virtualExpense = useMemo(
-    () => getRecurringForMonth(recurringApi.items.filter((r) => r.kind === 'expenses'), monthKey),
-    [recurringApi.items, monthKey],
+    () =>
+      getUnmaterializedForMonth(
+        recurringApi.items.filter((r) => r.kind === 'expenses'),
+        monthKey,
+        expenseApi.items,
+      ),
+    [recurringApi.items, monthKey, expenseApi.items],
   );
 
   const totals = useMemo(() => {
@@ -82,8 +154,19 @@ export default function App() {
       />
 
       <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <TransactionList kind="income" api={incomeApi} recurringItems={virtualIncome} />
-        <TransactionList kind="expenses" api={expenseApi} goals={goalsApi.items} recurringItems={virtualExpense} />
+        <TransactionList
+          kind="income"
+          api={incomeApi}
+          recurringItems={virtualIncome}
+          onExcludeOccurrence={excludeOccurrence}
+        />
+        <TransactionList
+          kind="expenses"
+          api={expenseApi}
+          goals={goalsApi.items}
+          recurringItems={virtualExpense}
+          onExcludeOccurrence={excludeOccurrence}
+        />
       </div>
 
       <div className="mt-5 space-y-4">
