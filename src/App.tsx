@@ -3,13 +3,14 @@ import { useRtdbList } from './hooks/useRtdbList';
 import { useStartBalance } from './hooks/useStartBalance';
 import { currentMonthKey } from './utils/month';
 import { isFirebaseConfigured } from './firebase';
-import type { Transaction } from './types';
+import type { Goal, Transaction } from './types';
 import MonthSelector from './components/MonthSelector';
 import SummaryCards from './components/SummaryCards';
 import BalanceEditor from './components/BalanceEditor';
 import TransactionList from './components/TransactionList';
 import GoalsPanel from './components/GoalsPanel';
 import InvestmentsPanel from './components/InvestmentsPanel';
+import HistoryChart from './components/HistoryChart';
 
 export default function App() {
   const [monthKey, setMonthKey] = useState<string>(currentMonthKey());
@@ -19,6 +20,7 @@ export default function App() {
 
   const incomeApi = useRtdbList<Transaction>(incomePath);
   const expenseApi = useRtdbList<Transaction>(expensePath);
+  const goalsApi = useRtdbList<Goal>('goals');
   const balance = useStartBalance(monthKey);
 
   // 切到新月份時若 startBalance 不存在，自動從前月結轉
@@ -66,11 +68,12 @@ export default function App() {
 
       <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <TransactionList kind="income" api={incomeApi} />
-        <TransactionList kind="expenses" api={expenseApi} />
+        <TransactionList kind="expenses" api={expenseApi} goals={goalsApi.items} />
       </div>
 
       <div className="mt-5 space-y-4">
         <GoalsPanel />
+        <HistoryChart />
         <InvestmentsPanel />
       </div>
 

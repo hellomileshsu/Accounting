@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Transaction, TransactionKind } from '../types';
+import type { Goal, Transaction, TransactionKind } from '../types';
 import { todayIso } from '../utils/month';
 
 interface Props {
@@ -7,13 +7,16 @@ interface Props {
   initial?: Transaction | null;
   onSubmit: (data: Omit<Transaction, 'id'>) => Promise<void> | void;
   onClose: () => void;
+  /** 僅 expenses 使用，供「關聯目標」下拉 */
+  goals?: Goal[];
 }
 
-export default function TransactionForm({ kind, initial, onSubmit, onClose }: Props) {
+export default function TransactionForm({ kind, initial, onSubmit, onClose, goals }: Props) {
   const [name, setName] = useState('');
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(todayIso());
   const [note, setNote] = useState('');
+  const [goalId, setGoalId] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -22,6 +25,7 @@ export default function TransactionForm({ kind, initial, onSubmit, onClose }: Pr
       setAmount(String(initial.amount));
       setDate(initial.date);
       setNote(initial.note ?? '');
+      setGoalId(initial.goalId ?? '');
     }
   }, [initial]);
 
@@ -33,7 +37,13 @@ export default function TransactionForm({ kind, initial, onSubmit, onClose }: Pr
     if (!name.trim() || !Number.isFinite(n) || n < 0) return;
     setSaving(true);
     try {
-      await onSubmit({ name: name.trim(), amount: n, date, note: note.trim() || undefined });
+      await onSubmit({
+        name: name.trim(),
+        amount: n,
+        date,
+        note: note.trim() || undefined,
+        goalId: kind === 'expenses' && goalId ? goalId : undefined,
+      });
       onClose();
     } finally {
       setSaving(false);
@@ -90,6 +100,22 @@ export default function TransactionForm({ kind, initial, onSubmit, onClose }: Pr
           <Field label="備註 (選填)">
             <input value={note} onChange={(e) => setNote(e.target.value)} className="input" />
           </Field>
+          {kind === 'expenses' && goals && goals.length > 0 && (
+            <Field label="關聯目標 (選填)">
+              <select
+                value={goalId}
+                onChange={(e) => setGoalId(e.target.value)}
+                className="input"
+              >
+                <option value="">— 不關聯 —</option>
+                {goals.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    🎯 {g.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
         </div>
         <div className="mt-5 flex justify-end gap-2">
           <button

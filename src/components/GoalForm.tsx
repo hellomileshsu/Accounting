@@ -10,7 +10,6 @@ interface Props {
 export default function GoalForm({ initial, onSubmit, onClose }: Props) {
   const [name, setName] = useState('');
   const [target, setTarget] = useState('');
-  const [current, setCurrent] = useState('');
   const [deadline, setDeadline] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -18,7 +17,6 @@ export default function GoalForm({ initial, onSubmit, onClose }: Props) {
     if (initial) {
       setName(initial.name);
       setTarget(String(initial.targetAmount));
-      setCurrent(String(initial.currentAmount));
       setDeadline(initial.deadline ?? '');
     }
   }, [initial]);
@@ -26,14 +24,12 @@ export default function GoalForm({ initial, onSubmit, onClose }: Props) {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const tNum = Number(target);
-    const cNum = Number(current);
     if (!name.trim() || !Number.isFinite(tNum) || tNum <= 0) return;
     setSaving(true);
     try {
       await onSubmit({
         name: name.trim(),
         targetAmount: tNum,
-        currentAmount: Number.isFinite(cNum) ? cNum : 0,
         deadline: deadline || undefined,
         createdAt: initial?.createdAt ?? Date.now(),
       });
@@ -55,20 +51,38 @@ export default function GoalForm({ initial, onSubmit, onClose }: Props) {
         <div className="space-y-3">
           <label className="block">
             <div className="mb-1 text-xs font-medium text-slate-600">目標名稱</div>
-            <input value={name} onChange={(e) => setName(e.target.value)} required className="input" placeholder="如：旅遊基金、緊急預備金" />
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              className="input"
+              placeholder="如：旅遊基金、緊急預備金"
+            />
           </label>
           <label className="block">
             <div className="mb-1 text-xs font-medium text-slate-600">目標金額</div>
-            <input type="number" min={0} step="any" value={target} onChange={(e) => setTarget(e.target.value)} required className="input" />
-          </label>
-          <label className="block">
-            <div className="mb-1 text-xs font-medium text-slate-600">目前已存</div>
-            <input type="number" min={0} step="any" value={current} onChange={(e) => setCurrent(e.target.value)} className="input" />
+            <input
+              type="number"
+              min={0}
+              step="any"
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+              required
+              className="input"
+            />
           </label>
           <label className="block">
             <div className="mb-1 text-xs font-medium text-slate-600">期限 (選填)</div>
-            <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} className="input" />
+            <input
+              type="date"
+              value={deadline}
+              onChange={(e) => setDeadline(e.target.value)}
+              className="input"
+            />
           </label>
+          <p className="rounded-md bg-sky-50 p-2 text-xs text-sky-700">
+            💡 目前已存金額會從「關聯到此目標的支出」自動累計，新增支出時可於表單選擇關聯目標。
+          </p>
         </div>
         <div className="mt-5 flex justify-end gap-2">
           <button type="button" onClick={onClose} className="rounded-md bg-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-300">

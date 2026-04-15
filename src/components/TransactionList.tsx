@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import type { Transaction, TransactionKind } from '../types';
+import { useMemo, useState } from 'react';
+import type { Goal, Transaction, TransactionKind } from '../types';
 import { formatCurrency } from '../utils/format';
 import type { RtdbListApi } from '../hooks/useRtdbList';
 import TransactionForm from './TransactionForm';
@@ -7,9 +7,15 @@ import TransactionForm from './TransactionForm';
 interface Props {
   kind: TransactionKind;
   api: RtdbListApi<Transaction>;
+  goals?: Goal[];
 }
 
-export default function TransactionList({ kind, api }: Props) {
+export default function TransactionList({ kind, api, goals }: Props) {
+  const goalById = useMemo(() => {
+    const m = new Map<string, Goal>();
+    (goals ?? []).forEach((g) => m.set(g.id, g));
+    return m;
+  }, [goals]);
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [creating, setCreating] = useState(false);
 
@@ -42,7 +48,14 @@ export default function TransactionList({ kind, api }: Props) {
           {items.map((t) => (
             <li key={t.id} className="flex items-center justify-between py-2">
               <div className="min-w-0">
-                <div className="truncate font-medium">{t.name}</div>
+                <div className="flex items-center gap-2">
+                  <span className="truncate font-medium">{t.name}</span>
+                  {t.goalId && goalById.get(t.goalId) && (
+                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">
+                      🎯 {goalById.get(t.goalId)!.name}
+                    </span>
+                  )}
+                </div>
                 <div className="text-xs text-slate-500">
                   {t.date}
                   {t.note ? ` · ${t.note}` : ''}
@@ -72,6 +85,7 @@ export default function TransactionList({ kind, api }: Props) {
       {creating && (
         <TransactionForm
           kind={kind}
+          goals={goals}
           onSubmit={async (data) => {
             await api.add(data);
           }}
@@ -81,6 +95,7 @@ export default function TransactionList({ kind, api }: Props) {
       {editing && (
         <TransactionForm
           kind={kind}
+          goals={goals}
           initial={editing}
           onSubmit={async (data) => {
             await api.updateItem(editing.id, data);

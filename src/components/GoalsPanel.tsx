@@ -1,13 +1,27 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { Goal } from '../types';
 import { useRtdbList } from '../hooks/useRtdbList';
+import { useAllMonths } from '../hooks/useAllMonths';
 import { formatCurrency, formatPercent } from '../utils/format';
 import GoalForm from './GoalForm';
 
 export default function GoalsPanel() {
   const api = useRtdbList<Goal>('goals');
+  const { months } = useAllMonths();
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Goal | null>(null);
+
+  // 目標已存金額 = Σ 所有月份 expenses 中 goalId 命中的金額
+  const savedByGoal = useMemo(() => {
+    const sum: Record<string, number> = {};
+    Object.values(months).forEach((m) => {
+      if (!m?.expenses) return;
+      Object.values(m.expenses).forEach((e) => {
+        if (e.goalId) sum[e.goalId] = (sum[e.goalId] ?? 0) + Number(e.amount || 0);
+      });
+    });
+    return sum;
+  }, [months]);
 
   const items = [...api.items].sort((a, b) => a.createdAt - b.createdAt);
 
@@ -29,8 +43,9 @@ export default function GoalsPanel() {
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {items.map((g) => {
-            const progress = g.targetAmount > 0 ? Math.min(1, g.currentAmount / g.targetAmount) : 0;
-            const remaining = Math.max(0, g.targetAmount - g.currentAmount);
+            const current = savedByGoal[g.id] ?? 0;
+            const progress = g.targetAmount > 0 ? Math.min(1, current / g.targetAmount) : 0;
+            const remaining = Math.max(0, g.targetAmount - current);
             return (
               <div key={g.id} className="rounded-lg border border-slate-200 p-3">
                 <div className="flex items-start justify-between">
@@ -44,7 +59,9 @@ export default function GoalsPanel() {
                     </button>
                     <button
                       onClick={() => {
-                        if (confirm(`刪除目標「${g.name}」？`)) api.remove(g.id);
+                        if (confirm(`刪除目標「${g.name}」？（已關聯的支出不會被刪除，僅解除關聯）`)) {
+                          api.remove(g.id);
+                        }
                       }}
                       className="text-slate-500 hover:text-rose-600"
                     >
@@ -60,9 +77,11 @@ export default function GoalsPanel() {
                 </div>
                 <div className="mt-1 flex justify-between text-xs text-slate-600">
                   <span>
-                    {formatCurrency(g.currentAmount)} / {formatCurrency(g.targetAmount)}
+                    {formatCurrency(current)} / {formatCurrency(g.targetAmount)}
                   </span>
-                  <span>{formatPercent(progress)} · 剩 {formatCurrency(remaining)}</span>
+                  <span>
+                    {formatPercent(progress)} · 剩 {formatCurrency(remaining)}
+                  </span>
                 </div>
               </div>
             );
